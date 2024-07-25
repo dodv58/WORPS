@@ -12,7 +12,7 @@ import wandb
 w_min, w_max = 1, 100
 
 
-Individual = namedtuple('Individual', 'chromosome fitness bsa')
+Individual = namedtuple('Individual', 'chromosome fitness rps')
 Session = namedtuple('Session', 'id s ds bw delta') # multicast
 
 def downlinks(route, m):
@@ -233,149 +233,45 @@ def bsa(net, traffic, weights):
     return cost, branch_states
 
 
-def apply_network_setting(net, traffic, weights, buffer_allocation):
-    net_copy = copy.deepcopy(net)
-
-    for m in net_copy.nodes:
-        net_copy.nodes[m]['buffer'] = []
-    nx.set_edge_attributes(net_copy, 0, 'allocated_bw')
-    for m, n in net_copy.edges:
-        net_copy[m][n]['transmission'] = np.zeros((len(traffic)))
+def apply_network_setting(net, traffic, weights, selected_rps):
+    net = copy.deepcopy(net)
+    nx.set_edge_attributes(net, 0, 'allocated_bw')
 
     if isinstance(weights, list):
-        for i, (m,n) in enumerate(net_copy.edges):
-            net_copy[m][n]['w'] = weights[i]
+        for i, (m,n) in enumerate(net.edges):
+            net[m][n]['w'] = weights[i]
     else:
-        for m, n in net_copy.edges:
-            net_copy[m][n]['w'] = weights[(m, n)]
+        for m, n in net.edges:
+            net[m][n]['w'] = weights[(m, n)]
 
-    session_buffer_allocation = {s.id: {} for s in traffic}
-    for m, j, k in buffer_allocation:
-        net_copy.nodes[m]['buffer'].append((j,k))
-        session_buffer_allocation[j][k] = m
+    all_pair_shortest_path = dict(nx.all_pairs_dijkstra_path(net, weight='w'))
 
-    all_pair_shortest_path = dict(nx.all_pairs_dijkstra_path(net_copy, weight='w'))
-
-    MDTs = []
+    failed_sessions = set()
     for s in traffic:
-        t = SPT(net_copy, s, all_pair_shortest_path, session_buffer_allocation[s.id])
-        MDTs.append(t)
+        rp = selected_rps[s.id]
+        delays = []
+        tree = set()
+        if s.s != rp:
+            route = links_in_path(all_pair_shortest_path[s.s][rp])
+            tree.update(route)
+        for d in s.ds:
+            route = links_in_path(all_pair_shortest_path[rp][d])
+            delays.append(len(route))
+            tree.update(route)
+        for m,n in tree:
+            net[m][n]['allocated_bw'] += s.bw
 
-        for m,n in t.edges_list():
-            net_copy[m][n]['transmission'][s.id] = t.edges[m,n]
+        for d1, d2 in product(delays, delays):
+            if d1 - d2 > s.delta:
+                failed_sessions.add(s.id)
+                break
 
-    for m, n in net_copy.edges:
-        net_copy[m][n]['allocated_bw'] = sum([traffic[i].bw * net_copy[m][n]['transmission'][i] for i in net_copy[m][n]['transmission'].nonzero()[0]])
+    cost = max([net[m][n]['allocated_bw']/net[m][n]['capacity'] for m, n in net.edges])
 
-    cost = sum([link_cost(net_copy[m][n]['capacity'], net_copy[m][n]['allocated_bw']) for m, n in net_copy.edges])
+    return cost, len(failed_sessions)/len(traffic)
 
-    return cost, MDTs, {m: net_copy.nodes[m]['stored_session'] for m in net_copy.nodes}, \
-           {(m,n): net_copy[m][n]['allocated_bw'] for m, n in net_copy.edges}
+def inverse_capacity_weights(net, traffic):
+    return [1/net[m][n]['capacity'] for m,n in net.edges]
 
-
-def create_gnome(genes, size):
-    return random.choices(genes, k=size)
-
-def create_individual(net, traffic, chromosome):
-    fitness, branch_states = bsa(net, traffic, chromosome)
-    return Individual(chromosome, fitness, branch_states)
-
-
-def mate(parent1, parent2, genes):
-    child_chromosome = []
-    for i in range(len(parent1.chromosome)):
-        # random probability
-        prob = random.random()
-
-        # if prob is less than 0.45, insert gene
-        # from parent 1
-        if prob < 0.45:
-            child_chromosome.append(parent1.chromosome[i])
-
-        # if prob is between 0.45 and 0.90, insert
-        # gene from parent 2
-        elif prob < 0.90:
-            child_chromosome.append(parent2.chromosome[i])
-
-        # otherwise insert random gene(mutate),
-        # for maintaining diversity
-        else:
-            child_chromosome.append(random.choice(genes))
-
-    return child_chromosome
-
-# Driver code
-def WOBSA(net, traffic, max_iters=[50], log=False):
-    print('Start Genetic algorithm')
-    # Number of individuals in each generation
-    max_iters = sorted(max_iters)
-    POPULATION_SIZE = 120
-    # current generation
-    generation = 1
-    GENES = [i for i in range(w_min, w_max+1)]
-    n_edges = len(net.edges)
-
-    best_individual = None
-    population = []
-
-
-    # create initial population
-    for _ in range(POPULATION_SIZE):
-        gnome = create_gnome(GENES, n_edges)
-        population.append(create_individual(net, traffic, gnome))
-
-    while generation <= max_iters[-1]:
-        # sort the population in increasing order of fitness score
-        population = sorted(population, key=lambda x: x.fitness)
-
-        # if the individual having lowest fitness score ie.
-        # 0 then we know that we have reached to the target
-        # and break the loop
-        if not best_individual:
-            best_individual = copy.deepcopy(population[0])
-        elif population[0].fitness <= best_individual.fitness:
-            best_individual = copy.deepcopy(population[0])
-
-        # Otherwise generate new offsprings for new generation
-        new_generation = []
-
-        # Perform Elitism, that mean 10% of fittest population
-        # goes to the next generation
-        s = int((10 * POPULATION_SIZE) / 100)
-        new_generation.extend(population[:s])
-
-        # From 50% of fittest population, Individuals
-        # will mate to produce offspring
-        s = int((90 * POPULATION_SIZE) / 100)
-        half_population = int(POPULATION_SIZE/2)
-        for _ in range(s):
-            parent1 = random.choice(population[:half_population])
-            parent2 = random.choice(population[:half_population])
-            child_chromosome = mate(parent1, parent2, GENES)
-            new_generation.append(create_individual(net, traffic, child_chromosome))
-
-        population = new_generation
-        if log is not None:
-            wobsa_cost, MDTs, stored_sessions, allocated_bw = apply_network_setting(net, traffic, best_individual.chromosome, best_individual.bsa)
-            loads = [allocated_bw[(m, n)] / net[m][n]['capacity'] for m, n in net.edges]
-            log.append({
-                'cost': {
-                    'GA': best_individual.fitness,
-                },
-                'max_link_load': {
-                    'GA': max(loads)
-                },
-                'n_overloaded_links': {
-                    'GA': len([l for l in loads if l > 1])
-                },
-                'n_full_load_nodes': {
-                    'GA': len([m for m in net.nodes if len(stored_sessions[m]) / net.nodes[m]['capacity'] >= 1])
-                },
-            })
-        print(f"Generation: {generation}\tbest solution cost: {best_individual.fitness}")
-
-        if generation in max_iters:
-            yield best_individual
-        generation += 1
-
-
+def unit_weights(net, traffic):
+    return [1 for m,n in net.edges]

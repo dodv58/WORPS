@@ -1,3 +1,5 @@
+import random
+
 import networkx as nx
 from common import *
 import numpy as np
@@ -9,12 +11,34 @@ np.random.seed(11)
 random.seed(11)
 
 
-def new_session(net, id, args):
+def new_session(net, id, source = None, type = 'normal', args = None):
+    nodes = list(net.nodes)
     group_size = random.randint(args.group_size_min, args.group_size_max)
-    nodes = random.sample(list(net.nodes), group_size)
-    random.shuffle(nodes)
-    return Session(id, nodes[0], nodes[1:], random.uniform(args.bw_min, args.bw_max), random.randint(args.delta_min, args.delta_max))
+    if type == 'normal':
+        delta = random.randint(args.normal_delta_min, args.normal_delta_max)
+    else:
+        delta = random.randint(args.critical_delta_min, args.critical_delta_max)
 
+    if source in nodes:
+        nodes = [m for m in nodes if m != source]
+        dests = random.sample(nodes, group_size - 1)
+        session = Session(id, source, dests, random.uniform(args.bw_min, args.bw_max), delta)
+    else:
+        nodes = random.sample(nodes, group_size)
+        random.shuffle(nodes)
+        session = Session(id, nodes[0], nodes[1:], random.uniform(args.bw_min, args.bw_max), delta)
+
+    return session
+
+def new_demand(net, args):
+    if args.demand_size > len(net.nodes):
+        sources = [m for m in net.nodes] * (args.demand_size//len(net.nodes))
+        random.shuffle(sources)
+    critical_session_count = int(args.demand_size*args.critical)
+    types = ['critical']* critical_session_count + ['normal']* (args.demand_size-critical_session_count)
+
+    return [new_session(net, i, sources[i] if i < len(sources) else None, type=types[i], args=args) for i in
+            range(args.demand_size)]
 
 
 if __name__ == '__main__':
@@ -25,12 +49,15 @@ if __name__ == '__main__':
     parser.add_argument('--max_capacity', help='max link capacity', type=float, default=15)
     parser.add_argument('--demand_size', help='number of session in a demand', type=int, default=100)
     parser.add_argument('--n_demands', help='number of demand', type=int, default=1)
-    parser.add_argument('--bw_min', type=float, default=0.04)
-    parser.add_argument('--bw_max', type=float, default=0.1)
-    parser.add_argument('--delta_min', type=int, default=0)
-    parser.add_argument('--delta_max', type=int, default=3)
+    parser.add_argument('--bw_min', type=float, default=0.1)
+    parser.add_argument('--bw_max', type=float, default=0.5)
+    parser.add_argument('--critical_delta_min', type=int, default=0)
+    parser.add_argument('--critical_delta_max', type=int, default=1)
+    parser.add_argument('--normal_delta_min', type=int, default=2)
+    parser.add_argument('--normal_delta_max', type=int, default=3)
+    parser.add_argument('--critical', type=float, default=0.1, help='proportion of critical traffic in a demand')
     parser.add_argument('--group_size_min', type=int, default=5)
-    parser.add_argument('--group_size_max', type=int, default=8)
+    parser.add_argument('--group_size_max', type=int, default=6)
 
     args = parser.parse_args()
     dir = f'datasets/{args.run}'
@@ -52,7 +79,7 @@ if __name__ == '__main__':
 
     nx.write_gml(net, dir + '/topo.gml')
     # gen traffic demands
-    demands = [[new_session(net, i, args) for i in range(args.demand_size)] for _ in range(args.n_demands)]
+    demands = [new_demand(net, args) for _ in range(args.n_demands)]
 
     with open(dir + '/traffic.txt', 'w') as f:
         json.dump(demands, f, indent=2)
