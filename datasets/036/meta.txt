@@ -1,0 +1,19 @@
+{
+    "run": "036",
+    "topo": "nsfnet",
+    "min_capacity": 10,
+    "max_capacity": 15,
+    "demand_size": 200,
+    "n_demands": 5,
+    "bw_min": 0.1,
+    "bw_max": 0.5,
+    "critical_delta_min": 0,
+    "critical_delta_max": 1,
+    "normal_delta_min": 2,
+    "normal_delta_max": 3,
+    "critical": 0.5,
+    "group_size_min": 5,
+    "group_size_max": 6,
+    "w_min": 1,
+    "w_max": 100
+}
