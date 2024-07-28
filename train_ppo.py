@@ -128,7 +128,7 @@ class Agent(nn.Module):
         return action, probs.log_prob(action), probs.entropy(), self.critic(x)
 
 
-class GCN_Agent(MessagePassing):
+class GCN_Agent(nn.Module):
     def __init__(self, envs):
         super().__init__()
         self.edge_adjacency = torch.from_numpy(envs.envs[0].edge_adjacency).float()
@@ -170,6 +170,9 @@ class GCN_Agent(MessagePassing):
 
         self.tanh = nn.Tanh()
         self.flattern = nn.Flatten()
+
+    def set_device(self, device):
+        self.edge_adjacency = self.edge_adjacency.to(device)
 
 
     def get_value(self, x):
@@ -376,6 +379,7 @@ if __name__ == "__main__":
     obs = envs.reset()
     # agent = Agent(envs).to(device)
     agent = GCN_Agent(envs).to(device)
+    agent.set_device(device)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
 
     # ALGO Logic: Storage setup
