@@ -36,7 +36,7 @@ class Args:
     """seed of the experiment"""
     torch_deterministic: bool = True
     """if toggled, `torch.backends.cudnn.deterministic=False`"""
-    cuda: bool = True
+    cuda: int = 0
     """if toggled, cuda will be enabled by default"""
     track: bool = False
     """if toggled, this experiment will be tracked with Weights and Biases"""
@@ -136,7 +136,8 @@ class GCN_Agent(nn.Module):
         self.extra_features = envs.envs[0].extra_features
         n_edges = (envs.single_observation_space.shape[0] - self.extra_features)//self.in_channels
         hidden_channels = 64
-        out_channels = 64
+        # out_channels = 64
+        out_channels = 32
 
         self.critic = nn.ModuleDict({
             "gcn1": GCNLayer1(self.in_channels, out_channels),
@@ -264,8 +265,8 @@ class GCNLayer1(nn.Module):
         self.encode = nn.Linear(c_in, c_hidden)
         self.message = nn.Linear(c_hidden, c_hidden)
         self.k = 4
-        # self.update_fn = nn.Sequential(nn.Linear(self.c_hidden*2, c_out), nn.Tanh())
-        self.update_fn = nn.Linear(c_hidden * 2, c_out)
+        self.update_fn = nn.Sequential(nn.Linear(self.c_hidden*2, c_out), nn.Tanh())
+        # self.update_fn = nn.Linear(c_hidden * 2, c_out)
 
     def forward(self, node_feats, adj_matrix):
         """Forward.
@@ -345,7 +346,7 @@ if __name__ == "__main__":
     torch.manual_seed(args.seed)
     torch.backends.cudnn.deterministic = args.torch_deterministic
 
-    device = torch.device("cuda" if torch.cuda.is_available() and args.cuda else "cpu")
+    device = torch.device(f"cuda:{args.cuda}" if torch.cuda.is_available() else "cpu")
     # device = torch.device("mps")
 
     # env setup
