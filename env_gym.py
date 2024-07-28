@@ -51,7 +51,7 @@ class Network(gym.Env):
         self.action_space = spaces.Discrete(self.n_edges*2 + 1)
 
     def _get_info(self):
-        return {}
+        return {"initial_network_cost": self.initial_network_cost}
 
     def _get_obs(self):
         max_link_load = self.loads >= self.loads.max()
@@ -95,6 +95,7 @@ class Network(gym.Env):
                                             traffic_bw=self.traffic_bw)
 
         self.loads = mdt @ self.traffic_bw / self.e_cap
+        self.initial_network_cost = self.loads.max()
         self.edge_betweenness = all_shortest_paths.sum(axis=(0, 1)) / (self.n_nodes ** 2)
 
         self.step_count = 0
