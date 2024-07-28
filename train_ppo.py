@@ -265,7 +265,7 @@ class GCNLayer1(nn.Module):
         self.encode = nn.Linear(c_in, c_hidden)
         self.message = nn.Linear(c_hidden, c_hidden)
         self.k = 4
-        self.update_fn = nn.Sequential(nn.Linear(self.c_hidden*2, c_out), nn.Tanh())
+        self.update_fn = nn.Sequential(nn.Linear(c_hidden*2, c_out), nn.Tanh())
         # self.update_fn = nn.Linear(c_hidden * 2, c_out)
 
     def forward(self, node_feats, adj_matrix):
