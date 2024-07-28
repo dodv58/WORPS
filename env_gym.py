@@ -21,7 +21,7 @@ def get_edge_adjacency(e_index_map, n_edges):
         arc_sources, arc_dests = zip(*arc_list)
         edge_adjacency[arc_sources, arc_dests] = 1
     return edge_adjacency
-
+    # return np.array(edge_adjacency.nonzero())
 
 class Network(gym.Env):
     def __init__(self, net, demands):
@@ -68,8 +68,8 @@ class Network(gym.Env):
 
     def reset(
         self,
-        seed: int | None = None,
-        options: dict[str, Any] | None = None,
+        seed: int = None,
+        options = None,
     ):
         super().reset(seed=seed)
         self.weights = np.full(self.n_edges, 20, dtype=np.float32)

@@ -20,6 +20,7 @@ import tyro
 from torch.distributions.categorical import Categorical
 from torch.utils.tensorboard import SummaryWriter
 from env_gym import Network, CatObservation
+import torch.nn.functional as F
 
 # import numpy as np
 from common import *
@@ -92,19 +93,6 @@ class Args:
     """the number of iterations (computed in runtime)"""
 
 
-# def make_env(env_id, idx, capture_video, run_name):
-#     def thunk():
-#         if capture_video and idx == 0:
-#             env = gym.make(env_id, render_mode="rgb_array")
-#             env = gym.wrappers.RecordVideo(env, f"videos/{run_name}")
-#         else:
-#             env = gym.make(env_id)
-#         env = gym.wrappers.RecordEpisodeStatistics(env)
-#         return env
-#
-#     return thunk
-
-
 def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
     torch.nn.init.orthogonal_(layer.weight, std)
     torch.nn.init.constant_(layer.bias, bias_const)
@@ -147,24 +135,38 @@ class GCN_Agent(MessagePassing):
         self.in_channels = envs.envs[0].n_features
         self.extra_features = envs.envs[0].extra_features
         n_edges = (envs.single_observation_space.shape[0] - self.extra_features)//self.in_channels
-        hidden_channels = 32
-        out_channels = 32
+        hidden_channels = 64
+        out_channels = 64
 
         self.critic = nn.ModuleDict({
-            "gcn1": GCNLayer(self.in_channels, hidden_channels),
-            "gcn2": GCNLayer(hidden_channels, out_channels),
-            "extra_lin": layer_init(nn.Linear(self.extra_features, 32)),
-            "lin1": layer_init(nn.Linear(n_edges * out_channels + 32, 64)),
+            "gcn1": GCNLayer1(self.in_channels, hidden_channels),
+            "gcn2": GCNLayer1(hidden_channels, out_channels),
+            "extra_lin": layer_init(nn.Linear(self.extra_features, 8)),
+            "lin1": layer_init(nn.Linear(n_edges * out_channels + 8, 64)),
             "lin2": layer_init(nn.Linear(64, 1), std=1.0),
         })
+        # self.critic = nn.ModuleDict({
+        #     "gcn1": GCNConv(self.in_channels, hidden_channels),
+        #     "gcn2": GCNConv(self.in_channels, hidden_channels),
+        #     "extra_lin": layer_init(nn.Linear(self.extra_features, 8)),
+        #     "lin1": layer_init(nn.Linear(n_edges * out_channels + 8, 64)),
+        #     "lin2": layer_init(nn.Linear(64, 1), std=1.0),
+        # })
 
         self.actor = nn.ModuleDict({
-            "gcn1": GCNLayer(self.in_channels, hidden_channels),
-            "gcn2": GCNLayer(hidden_channels, out_channels),
-            "extra_lin": layer_init(nn.Linear(self.extra_features, 32)),
-            "lin1": layer_init(nn.Linear(n_edges * out_channels + 32, 64)),
+            "gcn1": GCNLayer1(self.in_channels, hidden_channels),
+            "gcn2": GCNLayer1(hidden_channels, out_channels),
+            "extra_lin": layer_init(nn.Linear(self.extra_features, 8)),
+            "lin1": layer_init(nn.Linear(n_edges * out_channels + 8, 64)),
             "lin2": layer_init(nn.Linear(64, envs.single_action_space.n), std=0.01)
         })
+        # self.actor = nn.ModuleDict({
+        #     "gcn1": GCNConv(self.in_channels, hidden_channels),
+        #     "gcn2": GCNConv(self.in_channels, hidden_channels),
+        #     "extra_lin": layer_init(nn.Linear(self.extra_features, 8)),
+        #     "lin1": layer_init(nn.Linear(n_edges * out_channels + 8, 64)),
+        #     "lin2": layer_init(nn.Linear(64, envs.single_action_space.n), std=0.01)
+        # })
 
         self.tanh = nn.Tanh()
         self.flattern = nn.Flatten()
@@ -228,6 +230,87 @@ class GCNLayer(nn.Module):
         return node_feats
 
 
+class GCNConv(MessagePassing):
+    def __init__(self, in_channels, out_channels):
+        super().__init__(aggr='add')  # "Add" aggregation (Step 5).
+        self.lin = Linear(in_channels, out_channels, bias=False)
+        self.bias = Parameter(torch.empty(out_channels))
+
+        self.reset_parameters()
+
+    def reset_parameters(self):
+        self.lin.reset_parameters()
+        self.bias.data.zero_()
+
+    def forward(self, x, edge_index):
+        # x has shape [N, in_channels]
+        # edge_index has shape [2, E]
+
+        # Step 1: Add self-loops to the adjacency matrix.
+        edge_index, _ = add_self_loops(edge_index, num_nodes=x.size(0))
+
+        # Step 2: Linearly transform node feature matrix.
+        x = self.lin(x)
+
+        # Step 3: Compute normalization.
+        row, col = edge_index
+        deg = degree(col, x.size(0), dtype=x.dtype)
+        deg_inv_sqrt = deg.pow(-0.5)
+        deg_inv_sqrt[deg_inv_sqrt == float('inf')] = 0
+        norm = deg_inv_sqrt[row] * deg_inv_sqrt[col]
+
+        # Step 4-5: Start propagating messages.
+        out = self.propagate(edge_index, x=x, norm=norm)
+
+        # Step 6: Apply a final bias vector.
+        out = out + self.bias
+
+        return out
+
+    def message(self, x_j, norm):
+        # x_j has shape [E, out_channels]
+
+        # Step 4: Normalize node features.
+        return norm.view(-1, 1) * x_j
+
+class GCNLayer1(nn.Module):
+    def __init__(self, c_in, c_out):
+        super().__init__()
+        self.c_hidden = 64
+        self.encode = nn.Linear(c_in, self.c_hidden)
+        self.message = nn.Linear(self.c_hidden, self.c_hidden)
+        self.k = 4
+        self.update_fn = nn.Sequential(nn.Linear(self.c_hidden*2, c_out), nn.Tanh())
+
+    def forward(self, node_feats, adj_matrix):
+        """Forward.
+
+        Args:
+            node_feats: Tensor with node features of shape [batch_size, num_nodes, c_in]
+            adj_matrix: Batch of adjacency matrices of the graph. If there is an edge from i to j,
+                         adj_matrix[b,i,j]=1 else 0. Supports directed edges by non-symmetric matrices.
+                         Assumes to already have added the identity connections.
+                         Shape: [batch_size, num_nodes, num_nodes]
+        """
+        encoded_feats = self.encode(node_feats) # (batch, n_nodes, c_hidden)
+
+        for _ in range(self.k):
+            messages = self.message(encoded_feats) # (batch, n_nodes, c_hidden)
+            n_nodes = adj_matrix.shape[1]
+            # add self-loops
+            eye = torch.eye(n_nodes, dtype=bool).unsqueeze(dim=0).repeat(adj_matrix.shape[0], 1, 1).to(adj_matrix.device)
+            adj_matrix = adj_matrix.masked_fill(eye, 1)
+
+            adj_matrix_T = torch.transpose(adj_matrix, 1, 2)
+            aggregated_feats = torch.bmm(adj_matrix_T, messages) # (batch, n_nodes, c_hidden) sum of encoded features of incoming neighbours
+
+            num_incoming_neighbours = adj_matrix_T.sum(dim=-1, keepdims=True)
+            aggregated_feats = aggregated_feats / num_incoming_neighbours # mean
+
+            aggregated_feats = torch.concatenate([encoded_feats, aggregated_feats], dim=-1)
+            encoded_feats = self.update_fn(aggregated_feats)
+
+        return encoded_feats
 
 def make_env(dataset):
     def inner():
