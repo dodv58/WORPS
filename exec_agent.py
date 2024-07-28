@@ -3,7 +3,7 @@ import tyro
 from env_gym import make_env
 import gymnasium as gym
 from dataclasses import dataclass
-from agent import GCN_Agent
+from agent import GCN_Agent, Agent
 
 @dataclass
 class Args:
@@ -11,6 +11,8 @@ class Args:
     """seed of the experiment"""
     model: str = "latest"
     """ latest / best_episode_return / best_increasing_steps / best_episode_improvement """
+    agent: str = "mlp"
+    """mlp / gcn"""
 
     dataset: str = "025"
     seed: int = 1111
@@ -23,7 +25,12 @@ if __name__ == "__main__":
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-    agent = GCN_Agent(envs)
+    if args.agent == "mlp":
+        agent = Agent(envs).to(device)
+    elif args.agent == "gcn":
+        agent = GCN_Agent(envs).to(device)
+    else:
+        raise ValueError(f"Unknown agent {args.agent}")
     checkpoint = torch.load(f"runs/{args.run}/{args.model}.pth")
     agent.load_state_dict(checkpoint)
 

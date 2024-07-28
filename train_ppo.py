@@ -93,6 +93,8 @@ class Args:
     """the number of iterations (computed in runtime)"""
 
     dataset: str = "025"
+    agent: str = "mlp"
+    """mlp/gcn"""
 
 
 if __name__ == "__main__":
@@ -139,8 +141,12 @@ if __name__ == "__main__":
     # print(envs.single_observation_space)
 
     obs = envs.reset()
-    # agent = Agent(envs).to(device)
-    agent = GCN_Agent(envs).to(device)
+    if args.agent == 'mlp':
+        agent = Agent(envs).to(device)
+    elif args.agent == 'gcn':
+        agent = GCN_Agent(envs).to(device)
+    else:
+        raise ValueError(f"Unknown agent: {args.agent}")
     agent.set_device(device)
     optimizer = optim.Adam(agent.parameters(), lr=args.learning_rate, eps=1e-5)
 
