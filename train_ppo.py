@@ -139,34 +139,18 @@ class GCN_Agent(nn.Module):
         out_channels = 64
 
         self.critic = nn.ModuleDict({
-            "gcn1": GCNLayer1(self.in_channels, hidden_channels),
-            "gcn2": GCNLayer1(hidden_channels, out_channels),
+            "gcn1": GCNLayer1(self.in_channels, out_channels),
             "extra_lin": layer_init(nn.Linear(self.extra_features, 8)),
             "lin1": layer_init(nn.Linear(n_edges * out_channels + 8, 64)),
             "lin2": layer_init(nn.Linear(64, 1), std=1.0),
         })
-        # self.critic = nn.ModuleDict({
-        #     "gcn1": GCNConv(self.in_channels, hidden_channels),
-        #     "gcn2": GCNConv(self.in_channels, hidden_channels),
-        #     "extra_lin": layer_init(nn.Linear(self.extra_features, 8)),
-        #     "lin1": layer_init(nn.Linear(n_edges * out_channels + 8, 64)),
-        #     "lin2": layer_init(nn.Linear(64, 1), std=1.0),
-        # })
 
         self.actor = nn.ModuleDict({
-            "gcn1": GCNLayer1(self.in_channels, hidden_channels),
-            "gcn2": GCNLayer1(hidden_channels, out_channels),
+            "gcn1": GCNLayer1(self.in_channels, out_channels),
             "extra_lin": layer_init(nn.Linear(self.extra_features, 8)),
             "lin1": layer_init(nn.Linear(n_edges * out_channels + 8, 64)),
             "lin2": layer_init(nn.Linear(64, envs.single_action_space.n), std=0.01)
         })
-        # self.actor = nn.ModuleDict({
-        #     "gcn1": GCNConv(self.in_channels, hidden_channels),
-        #     "gcn2": GCNConv(self.in_channels, hidden_channels),
-        #     "extra_lin": layer_init(nn.Linear(self.extra_features, 8)),
-        #     "lin1": layer_init(nn.Linear(n_edges * out_channels + 8, 64)),
-        #     "lin2": layer_init(nn.Linear(64, envs.single_action_space.n), std=0.01)
-        # })
 
         self.tanh = nn.Tanh()
         self.flattern = nn.Flatten()
@@ -182,7 +166,6 @@ class GCN_Agent(nn.Module):
         adj_matrix = self.edge_adjacency.expand(batch_size, x.shape[1], x.shape[1])
 
         x = self.tanh(self.critic["gcn1"](x, adj_matrix))
-        x = self.tanh(self.critic["gcn2"](x, adj_matrix))
         x = self.flattern(x)
         extras = self.tanh(self.critic["extra_lin"](extras))
         x = torch.cat([x, extras], dim=-1)
@@ -197,7 +180,6 @@ class GCN_Agent(nn.Module):
         adj_matrix = self.edge_adjacency.expand(batch_size, _x.shape[1], _x.shape[1])
 
         _x = self.tanh(self.actor["gcn1"](_x, adj_matrix))
-        _x = self.tanh(self.actor["gcn2"](_x, adj_matrix))
         _x = self.flattern(_x)
         extras = self.tanh(self.critic["extra_lin"](extras))
         _x = torch.cat([_x, extras], dim=-1)
@@ -277,13 +259,13 @@ class GCNConv(MessagePassing):
         return norm.view(-1, 1) * x_j
 
 class GCNLayer1(nn.Module):
-    def __init__(self, c_in, c_out):
+    def __init__(self, c_in, c_out, c_hidden=64):
         super().__init__()
-        self.c_hidden = 64
-        self.encode = nn.Linear(c_in, self.c_hidden)
-        self.message = nn.Linear(self.c_hidden, self.c_hidden)
+        self.encode = nn.Linear(c_in, c_hidden)
+        self.message = nn.Linear(c_hidden, c_hidden)
         self.k = 4
-        self.update_fn = nn.Sequential(nn.Linear(self.c_hidden*2, c_out), nn.Tanh())
+        # self.update_fn = nn.Sequential(nn.Linear(self.c_hidden*2, c_out), nn.Tanh())
+        self.update_fn = nn.Linear(c_hidden * 2, c_out)
 
     def forward(self, node_feats, adj_matrix):
         """Forward.
