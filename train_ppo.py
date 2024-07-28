@@ -265,7 +265,8 @@ class GCNLayer1(nn.Module):
         self.encode = nn.Linear(c_in, c_hidden)
         self.message = nn.Linear(c_hidden, c_hidden)
         self.k = 4
-        self.update_fn = nn.Sequential(nn.Linear(c_hidden*2, c_out), nn.Tanh())
+        self.update_fn = nn.Sequential(nn.Linear(c_hidden*2, c_hidden), nn.Tanh())
+        self.decode = nn.Linear(c_hidden, c_out)
         # self.update_fn = nn.Linear(c_hidden * 2, c_out)
 
     def forward(self, node_feats, adj_matrix):
@@ -296,7 +297,7 @@ class GCNLayer1(nn.Module):
             aggregated_feats = torch.concatenate([encoded_feats, aggregated_feats], dim=-1)
             encoded_feats = self.update_fn(aggregated_feats)
 
-        return encoded_feats
+        return self.decode(encoded_feats)
 
 def make_env(dataset):
     def inner():
