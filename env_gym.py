@@ -51,7 +51,8 @@ class Network(gym.Env):
         self.action_space = spaces.Discrete(self.n_edges*2 + 1)
 
     def _get_info(self):
-        return {"initial_network_cost": self.initial_network_cost}
+        return {"initial_network_cost": self.initial_network_cost,
+                "increasing_steps": self.increasing_steps}
 
     def _get_obs(self):
         max_link_load = self.loads >= self.loads.max()
@@ -96,12 +97,19 @@ class Network(gym.Env):
 
         self.loads = mdt @ self.traffic_bw / self.e_cap
         self.initial_network_cost = self.loads.max()
+        self.increasing_steps = 0
         self.edge_betweenness = all_shortest_paths.sum(axis=(0, 1)) / (self.n_nodes ** 2)
 
         self.step_count = 0
         observation = self._get_obs()
         info = self._get_info()
         return observation, info
+
+    def get_weights(self):
+        return self.weights
+    
+    def get_network_cost(self):
+        return self.loads.max()
 
     def step(self, action):
         self.step_count += 1
@@ -128,6 +136,8 @@ class Network(gym.Env):
         self.edge_betweenness = all_shortest_paths.sum(axis=(0,1)) / (self.n_nodes**2)
 
         reward = current_loads.max() - self.loads.max()
+        if reward > 0:
+            self.increasing_steps += 1/self.max_step
 
         terminated = self.step_count >= self.max_step
         observation = self._get_obs()
@@ -242,6 +252,24 @@ class CatObservation(gym.ObservationWrapper):
                 obs["e_cap"]
             ),
             axis=-1)
+
+
+def make_env(dataset):
+    def inner():
+        net = nx.read_gml(f'datasets/{dataset}/topo.gml')
+        net = nx.convert_node_labels_to_integers(net)
+
+        with open(f'datasets/{dataset}/traffic.txt') as f:
+            demands = json.load(f)
+            demands = [[Session(*s) for s in traffic] for traffic in demands]
+            # traffic = demands[0]
+
+        env = Network(net=net, demands = demands)
+        # env = CatObservation(env)
+        # env = FlattenObservation(env)
+        env = gym.wrappers.RecordEpisodeStatistics(env)
+        return env
+    return inner
 
 if __name__ == "__main__":
     dataset = "025"
