@@ -45,7 +45,7 @@ if __name__ == "__main__":
     for _ in range(len(envs.envs[0].demands)):
         terminated = False
         print(">>>>>>>>>>>>")
-        print(f"initial network cost: {info['initial_network_cost']}")
+        print(f"initial network cost: {infos['initial_network_cost']}")
         print(f"traffic index: {infos['traffic_index'][0]}")
         while not terminated:
             with torch.no_grad():
