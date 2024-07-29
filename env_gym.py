@@ -54,7 +54,10 @@ class Network(gym.Env):
 
     def _get_info(self):
         return {"initial_network_cost": self.initial_network_cost,
-                "increasing_steps": self.increasing_steps/(self.step_count + 1)}
+                "increasing_steps": self.increasing_steps/(self.step_count + 1),
+                "step_count": self.step_count,
+                "network_cost": self.get_network_cost(),
+                "traffic_index": self.traffic_index}
 
     def _get_obs(self):
         max_link_load = self.loads >= self.loads.max()
@@ -114,7 +117,7 @@ class Network(gym.Env):
     
     def get_network_cost(self):
         return self.loads.max()
-    
+
     def step(self, action):
         self.step_count += 1
         if action < self.n_edges:

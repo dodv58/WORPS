@@ -39,14 +39,14 @@ if __name__ == "__main__":
     agent.load_state_dict(checkpoint)
     agent.set_device(device)
 
-    next_obs, info = envs.reset()
+    next_obs, infos = envs.reset()
     next_obs = torch.Tensor(next_obs).to(device)
 
     for _ in range(len(envs.envs[0].demands)):
         terminated = False
         print(">>>>>>>>>>>>")
         print(f"initial network cost: {info['initial_network_cost']}")
-        print(f"traffic index: {envs.envs[0].traffic_index}")
+        print(f"traffic index: {infos['traffic_index'][0]}")
         while not terminated:
             with torch.no_grad():
                 action, logprob, _, value = agent.get_action_and_value(next_obs)
@@ -54,7 +54,6 @@ if __name__ == "__main__":
                 next_obs = torch.Tensor(next_obs).to(device)
                 terminated = terminations[0]
 
-        print(f"final network cost: {envs.envs[0].get_network_cost()}, step_count {envs.envs[0].step_count}")
-        envs.reset()
-        next_obs, info = envs.reset()
-        next_obs = torch.Tensor(next_obs).to(device)
+            if terminated:
+                print(f"final network cost: {infos['network_cost'][0]}, step_count {infos['step_count'][0]}")
+                print(f"next traffic index: {infos['traffic_index'][0]}")
