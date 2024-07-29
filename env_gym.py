@@ -114,7 +114,7 @@ class Network(gym.Env):
     
     def get_network_cost(self):
         return self.loads.max()
-
+    
     def step(self, action):
         self.step_count += 1
         if action < self.n_edges:

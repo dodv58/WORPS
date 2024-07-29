@@ -44,7 +44,9 @@ if __name__ == "__main__":
 
     for _ in range(len(envs.envs[0].demands)):
         terminated = False
-        print(f">>>> initial network cost: {info['initial_network_cost']}")
+        print(">>>>>>>>>>>>")
+        print(f"initial network cost: {info['initial_network_cost']}")
+        print(f"traffic index: {envs.envs[0].traffic_index}")
         while not terminated:
             with torch.no_grad():
                 action, logprob, _, value = agent.get_action_and_value(next_obs)
@@ -52,5 +54,7 @@ if __name__ == "__main__":
                 next_obs = torch.Tensor(next_obs).to(device)
                 terminated = terminations[0]
 
-
-        print(f"final network cost: {envs.envs[0].get_network_cost()}")
+        print(f"final network cost: {envs.envs[0].get_network_cost()}, step_count {envs.envs[0].step_count}")
+        envs.reset()
+        next_obs, info = envs.reset()
+        next_obs = torch.Tensor(next_obs).to(device)
