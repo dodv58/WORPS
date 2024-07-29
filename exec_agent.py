@@ -48,6 +48,7 @@ if __name__ == "__main__":
         print(f"initial network cost: {infos['initial_network_cost']}")
         print(f"traffic index: {infos['traffic_index'][0]}")
         while not terminated:
+            last_step_infos = None
             with torch.no_grad():
                 action, logprob, _, value = agent.get_action_and_value(next_obs)
                 next_obs, reward, terminations, truncations, infos = envs.step(action.cpu().numpy())
@@ -55,5 +56,7 @@ if __name__ == "__main__":
                 terminated = terminations[0]
 
             if terminated:
-                print(f"final network cost: {infos['network_cost'][0]}, step_count {infos['step_count'][0]}")
-                print(f"next traffic index: {infos['traffic_index'][0]}")
+                print(f"final network cost: {last_step_infos['network_cost'][0]}, step_count {last_step_infos['step_count'][0]}")
+                # print(f"next traffic index: {infos['traffic_index'][0]}")
+            else:
+                last_step_infos = infos
