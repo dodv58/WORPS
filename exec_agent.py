@@ -15,7 +15,7 @@ class Args:
     """mlp / gcn"""
 
     dataset: str = "025"
-    seed: int = 1111
+    seed: int = 111
 
 if __name__ == "__main__":
     args = tyro.cli(Args)
@@ -31,7 +31,7 @@ if __name__ == "__main__":
         agent = GCN_Agent(envs).to(device)
     else:
         raise ValueError(f"Unknown agent {args.agent}")
-    checkpoint = torch.load(f"runs/{args.run}/{args.model}.pth")
+    checkpoint = torch.load(f"runs/{args.run}/{args.model}.pth", weights_only=True)
     agent.load_state_dict(checkpoint)
 
 

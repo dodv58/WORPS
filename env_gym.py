@@ -40,6 +40,7 @@ class Network(gym.Env):
         
 
         self.demands = [sorted(traffic, key=lambda x: x.bw * len(x.ds), reverse=True) for traffic in demands]
+        self.traffic_index = 0
 
         self.max_step = 150
         self.max_weight = 100
@@ -75,7 +76,9 @@ class Network(gym.Env):
         super().reset(seed=seed)
         self.weights = np.full(self.n_edges, 20, dtype=np.float32)
 
-        self.traffic_index = np.random.choice(len(self.demands))
+        self.traffic_index += 1
+        if self.traffic_index >= len(self.demands):
+            self.traffic_index = 0
         self.traffic = self.demands[self.traffic_index]
         self.n_traffic = len(self.traffic)
         self.traffic_bw = np.array([s.bw for s in self.traffic])
