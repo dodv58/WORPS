@@ -25,7 +25,7 @@ import torch.nn.functional as F
 from common import *
 import json
 
-from agent import Agent, GCN_Agent
+from agent import Agent, GCN_Agent, MixedAgent
 
 
 @dataclass
@@ -94,7 +94,7 @@ class Args:
 
     dataset: str = "025"
     agent: str = "mlp"
-    """mlp/gcn"""
+    """mlp/gcn/mixed"""
 
 
 if __name__ == "__main__":
@@ -145,6 +145,8 @@ if __name__ == "__main__":
         agent = Agent(envs).to(device)
     elif args.agent == 'gcn':
         agent = GCN_Agent(envs).to(device)
+    elif args.agent == 'mixed':
+        agent = MixedAgent(envs).to(device)
     else:
         raise ValueError(f"Unknown agent: {args.agent}")
     agent.set_device(device)

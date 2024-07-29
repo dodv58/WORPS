@@ -126,6 +126,70 @@ class GCN_Agent(nn.Module):
         # return action, probs.log_prob(action), probs.entropy(), self.critic(x, adj_matrix)
         return action, probs.log_prob(action), probs.entropy(), self.get_value(x)
 
+class MixedAgent(nn.Module):
+    def __init__(self, envs):
+        super().__init__()
+        self.edge_adjacency = torch.from_numpy(envs.envs[0].edge_adjacency).float()
+        self.in_channels = envs.envs[0].n_features
+        self.extra_features = envs.envs[0].extra_features
+        n_edges = (envs.single_observation_space.shape[0] - self.extra_features)//self.in_channels
+        hidden_channels = 64
+        # out_channels = 64
+        out_channels = 32
+
+        self.critic = nn.ModuleDict({
+            "gcn1": GCNLayer1(self.in_channels, out_channels),
+            "lin1": layer_init(nn.Linear(out_channels*n_edges + envs.single_observation_space.shape[0], 128)),
+            "lin2": layer_init(nn.Linear(128, 64)),
+            "lin3": layer_init(nn.Linear(64, 1), std=1.0),
+        })
+
+        self.actor = nn.ModuleDict({
+            "gcn1": GCNLayer1(self.in_channels, out_channels),
+            "lin1": layer_init(nn.Linear(out_channels*n_edges + envs.single_observation_space.shape[0], 128)),
+            "lin2": layer_init(nn.Linear(128, 64)),
+            "lin3": layer_init(nn.Linear(64, envs.single_action_space.n), std=0.01)
+        })
+
+        self.tanh = nn.Tanh()
+        self.flattern = nn.Flatten()
+
+    def set_device(self, device):
+        self.edge_adjacency = self.edge_adjacency.to(device)
+
+    def get_value(self, x):
+        batch_size = x.shape[0]
+        _x, _ = x.split([x.shape[-1] - 1, 1], dim=-1)
+        _x = _x.reshape(batch_size, -1, self.in_channels)
+        adj_matrix = self.edge_adjacency.expand(batch_size, _x.shape[1], _x.shape[1])
+
+        _x = self.tanh(self.critic["gcn1"](_x, adj_matrix))
+        _x = self.flattern(_x)
+        _x = torch.cat([x, _x], dim=-1)
+        _x = self.tanh(self.critic["lin1"](_x))
+        _x = self.tanh(self.critic["lin2"](_x))
+        return self.critic["lin3"](_x)
+
+
+    def get_action_and_value(self, x, action=None):
+        batch_size = x.shape[0]
+        _x, extras = x.split([x.shape[-1] - 1, 1], dim=-1)
+        _x = _x.reshape(batch_size, -1, self.in_channels)
+        adj_matrix = self.edge_adjacency.expand(batch_size, _x.shape[1], _x.shape[1])
+
+        _x = self.tanh(self.actor["gcn1"](_x, adj_matrix))
+        _x = self.flattern(_x)
+        _x = torch.cat([x, _x], dim=-1)
+        _x = self.tanh(self.actor["lin1"](_x))
+        _x = self.tanh(self.actor["lin2"](_x))
+        logits = self.actor["lin3"](_x)
+
+        probs = Categorical(logits=logits)
+        if action is None:
+            action = probs.sample()
+        # return action, probs.log_prob(action), probs.entropy(), self.critic(x, adj_matrix)
+        return action, probs.log_prob(action), probs.entropy(), self.get_value(x)
+
 class GCNLayer(nn.Module):
     def __init__(self, c_in, c_out):
         super().__init__()
