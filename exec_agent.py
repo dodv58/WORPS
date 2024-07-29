@@ -3,7 +3,7 @@ import tyro
 from env_gym import make_env
 import gymnasium as gym
 from dataclasses import dataclass
-from agent import GCN_Agent, Agent
+from agent import GCN_Agent, Agent, MixedAgent
 
 @dataclass
 class Args:
@@ -12,7 +12,7 @@ class Args:
     model: str = "latest"
     """ latest / best_episode_return / best_increasing_steps / best_episode_improvement """
     agent: str = "mlp"
-    """mlp / gcn"""
+    """mlp / gcn / mixed"""
 
     dataset: str = "025"
     seed: int = 111
@@ -31,6 +31,8 @@ if __name__ == "__main__":
         agent = Agent(envs).to(device)
     elif args.agent == "gcn":
         agent = GCN_Agent(envs).to(device)
+    elif args.agent == "mixed":
+        agent = MixedAgent(envs).to(device)
     else:
         raise ValueError(f"Unknown agent {args.agent}")
     checkpoint = torch.load(f"runs/{args.run}/{args.model}.pth", weights_only=True)
@@ -39,15 +41,16 @@ if __name__ == "__main__":
 
     next_obs, info = envs.reset(seed=args.seed)
     next_obs = torch.Tensor(next_obs).to(device)
-    print(f"initial network cost: {info}")
 
-    terminated = False    
-    while not terminated:
-        with torch.no_grad():
-            action, logprob, _, value = agent.get_action_and_value(next_obs)
-            next_obs, reward, terminations, truncations, infos = envs.step(action.cpu().numpy())
-            next_obs = torch.Tensor(next_obs).to(device)
-            terminated = terminations[0]
-            
+    for _ in range(len(envs.envs[0].demands)):
+        terminated = False
+        print(f">>>> initial network cost: {info['initial_network_cost']}")
+        while True:
+            with torch.no_grad():
+                action, logprob, _, value = agent.get_action_and_value(next_obs)
+                next_obs, reward, terminations, truncations, infos = envs.step(action.cpu().numpy())
+                next_obs = torch.Tensor(next_obs).to(device)
+                terminated = terminations[0]
 
-    print(f"final network cost: {envs.envs[0].get_network_cost()}")
+
+        print(f"final network cost: {envs.envs[0].get_network_cost()}")
