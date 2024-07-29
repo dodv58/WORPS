@@ -37,9 +37,9 @@ if __name__ == "__main__":
         raise ValueError(f"Unknown agent {args.agent}")
     checkpoint = torch.load(f"runs/{args.run}/{args.model}.pth", weights_only=True)
     agent.load_state_dict(checkpoint)
+    agent.set_device(device)
 
-
-    next_obs, info = envs.reset(seed=args.seed)
+    next_obs, info = envs.reset()
     next_obs = torch.Tensor(next_obs).to(device)
 
     for _ in range(len(envs.envs[0].demands)):
