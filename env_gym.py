@@ -24,7 +24,7 @@ def get_edge_adjacency(e_index_map, n_edges):
     # return np.array(edge_adjacency.nonzero())
 
 class Network(gym.Env):
-    def __init__(self, net, demands):
+    def __init__(self, net, demands, max_step=200, early_stop=True):
         self.n_nodes = len(net.nodes)
         self.n_edges = len(net.edges)
         self.nodes = list(range(self.n_nodes))
@@ -42,8 +42,9 @@ class Network(gym.Env):
         self.demands = [sorted(traffic, key=lambda x: x.bw * len(x.ds), reverse=True) for traffic in demands]
         self.traffic_index = 0
 
-        self.max_step = 150
+        self.max_step = max_step
         self.max_weight = 100
+        self.early_stop = early_stop
 
         self.n_features = 6
         self.extra_features = 1
@@ -53,7 +54,7 @@ class Network(gym.Env):
 
     def _get_info(self):
         return {"initial_network_cost": self.initial_network_cost,
-                "increasing_steps": self.increasing_steps}
+                "increasing_steps": self.increasing_steps/(self.step_count + 1)}
 
     def _get_obs(self):
         max_link_load = self.loads >= self.loads.max()
@@ -123,7 +124,11 @@ class Network(gym.Env):
             self.weights[e_index] = max(1, self.weights[e_index] - 1)
         else:
             # keep the weights unchanged
-            return self._get_obs(), 0, self.step_count >= self.max_step, False, self._get_info()
+            if self.early_stop:
+                return self._get_obs(), 0, True, False, self._get_info()
+            else:
+                return self._get_obs(), 0, self.step_count >= self.max_step, False, self._get_info()
+                
 
         mdt, all_shortest_paths = get_mdt(weights=self.weights,
                                           e_sources=self.e_sources,
@@ -140,7 +145,7 @@ class Network(gym.Env):
 
         reward = current_loads.max() - self.loads.max()
         if reward > 0:
-            self.increasing_steps += 1/self.max_step
+            self.increasing_steps += 1
 
         terminated = self.step_count >= self.max_step
         observation = self._get_obs()
@@ -257,7 +262,7 @@ class CatObservation(gym.ObservationWrapper):
             axis=-1)
 
 
-def make_env(dataset):
+def make_env(dataset, env_max_step, early_stop):
     def inner():
         net = nx.read_gml(f'datasets/{dataset}/topo.gml')
         net = nx.convert_node_labels_to_integers(net)
@@ -267,7 +272,7 @@ def make_env(dataset):
             demands = [[Session(*s) for s in traffic] for traffic in demands]
             # traffic = demands[0]
 
-        env = Network(net=net, demands = demands)
+        env = Network(net=net, demands = demands, max_step=env_max_step, early_stop=early_stop)
         # env = CatObservation(env)
         # env = FlattenObservation(env)
         env = gym.wrappers.RecordEpisodeStatistics(env)

@@ -16,11 +16,13 @@ class Args:
 
     dataset: str = "025"
     seed: int = 111
+    env_max_step: int = 200
+    early_stop: bool = True
 
 if __name__ == "__main__":
     args = tyro.cli(Args)
     envs = gym.vector.SyncVectorEnv(
-        [make_env(args.dataset)],
+        [make_env(args.dataset, args.env_max_step, args.early_stop)],
     )
 
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")

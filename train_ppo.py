@@ -95,6 +95,8 @@ class Args:
     dataset: str = "025"
     agent: str = "mlp"
     """mlp/gcn/mixed"""
+    env_max_step: int = 200
+    early_stop: bool = True
 
 
 if __name__ == "__main__":
@@ -132,7 +134,7 @@ if __name__ == "__main__":
 
     # env setup
     envs = gym.vector.SyncVectorEnv(
-        [make_env(args.dataset) for i in range(args.num_envs)],
+        [make_env(args.dataset, args.env_max_step, args.early_stop) for i in range(args.num_envs)],
     )
 
     assert isinstance(envs.single_action_space, gym.spaces.Discrete), "only discrete action space is supported"
