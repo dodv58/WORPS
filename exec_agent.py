@@ -45,10 +45,10 @@ if __name__ == "__main__":
     for _ in range(len(envs.envs[0].demands)):
         terminated = False
         print(">>>>>>>>>>>>")
-        print(f"initial network cost: {infos['initial_network_cost']}")
         print(f"traffic index: {infos['traffic_index'][0]}")
+        print(f"initial network cost: {infos['initial_network_cost']}")
         while not terminated:
-            last_step_infos = None
+            last_step_infos = infos
             with torch.no_grad():
                 action, logprob, _, value = agent.get_action_and_value(next_obs)
                 next_obs, reward, terminations, truncations, infos = envs.step(action.cpu().numpy())
