@@ -7,7 +7,7 @@ from agent import GCN_Agent, Agent, MixedAgent
 
 @dataclass
 class Args:
-    run: str = "WORPS-v1__train_ppo__1__1722182581"
+    run: str = ""
     """seed of the experiment"""
     model: str = "latest"
     """ latest / best_episode_return / best_increasing_steps / best_episode_improvement """
@@ -43,6 +43,8 @@ if __name__ == "__main__":
     next_obs, infos = envs.reset()
     next_obs = torch.Tensor(next_obs).to(device)
 
+    results = [10 for i in range(len(envs.envs[0].demands))]
+
     for _ in range(len(envs.envs[0].demands)):
         terminated = False
         print(">>>>>>>>>>>>")
@@ -58,6 +60,10 @@ if __name__ == "__main__":
 
             if terminated:
                 print(f"final network cost: {last_step_infos['network_cost'][0]}, step_count {last_step_infos['step_count'][0]}")
+                traffic_index = last_step_infos['traffic_index'][0]
+                results[traffic_index] = min(results[traffic_index], last_step_infos['network_cost'][0])
                 # print(f"next traffic index: {infos['traffic_index'][0]}")
             else:
                 last_step_infos = infos
+
+    print(results)
