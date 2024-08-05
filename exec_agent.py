@@ -19,6 +19,8 @@ class Args:
     seed: int = 111
     env_max_step: int = 200
     early_stop: bool = True
+    n_runs: int = 1
+    """ number of executions """
 
 if __name__ == "__main__":
     args = tyro.cli(Args)
@@ -45,7 +47,7 @@ if __name__ == "__main__":
 
     results = [10 for i in range(len(envs.envs[0].demands))]
 
-    for _ in range(len(envs.envs[0].demands)):
+    for _ in range(len(envs.envs[0].demands) * args.n_runs):
         terminated = False
         print(">>>>>>>>>>>>")
         print(f"traffic index: {infos['traffic_index'][0]}")
