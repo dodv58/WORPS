@@ -13,6 +13,7 @@ class Args:
     """ latest / best_episode_return / best_increasing_steps / best_episode_improvement """
     agent: str = "mlp"
     """mlp / gcn / mixed"""
+    cuda: str = "0"
 
     dataset: str = "025"
     seed: int = 111
@@ -25,7 +26,7 @@ if __name__ == "__main__":
         [make_env(args.dataset, args.env_max_step, args.early_stop)],
     )
 
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    device = torch.device(f"cuda:{args.cuda}" if torch.cuda.is_available() else "cpu")
 
     if args.agent == "mlp":
         agent = Agent(envs).to(device)
