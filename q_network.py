@@ -27,38 +27,24 @@ def layer_init(layer, std=np.sqrt(2), bias_const=0.0):
     torch.nn.init.constant_(layer.bias, bias_const)
     return layer
 
-class Agent(nn.Module):
+class QNetwork(nn.Module):
     def __init__(self, envs):
         super().__init__()
-        self.critic = nn.Sequential(
-            layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 128)),
-            nn.Tanh(),
-            layer_init(nn.Linear(128, 64)),
-            nn.Tanh(),
-            layer_init(nn.Linear(64, 1), std=1.0),
+        self.network = nn.Sequential(
+            nn.Linear(np.array(envs.single_observation_space.shape).prod(), 128),
+            nn.ReLU(),
+            nn.Linear(128, 64),
+            nn.ReLU(),
+            nn.Linear(64, envs.single_action_space.n),
         )
-        self.actor = nn.Sequential(
-            layer_init(nn.Linear(np.array(envs.single_observation_space.shape).prod(), 128)),
-            nn.Tanh(),
-            layer_init(nn.Linear(128, 64)),
-            nn.Tanh(),
-            layer_init(nn.Linear(64, envs.single_action_space.n), std=0.01),
-        )
+
     def set_device(self, device):
         self.to(device)
-        pass
 
-    def get_value(self, x):
-        return self.critic(x)
+    def forward(self, x):
+        return self.network(x)
 
-    def get_action_and_value(self, x, action=None):
-        logits = self.actor(x)
-        probs = Categorical(logits=logits)
-        if action is None:
-            action = probs.sample()
-        return action, probs.log_prob(action), probs.entropy(), self.critic(x)
-
-class GCN_Agent(nn.Module):
+class GCNNetwork(nn.Module):
     def __init__(self, envs):
         super().__init__()
         self.edge_adjacency = torch.from_numpy(envs.envs[0].edge_adjacency).float()
@@ -73,15 +59,9 @@ class GCN_Agent(nn.Module):
             "gcn1": GCNLayer1(self.in_channels, out_channels),
             "extra_lin": layer_init(nn.Linear(self.extra_features, 8)),
             "lin1": layer_init(nn.Linear(n_edges * out_channels + 8, 64)),
-            "lin2": layer_init(nn.Linear(64, 1), std=1.0),
+            "lin2": layer_init(nn.Linear(64, envs.single_action_space.n)),
         })
 
-        self.actor = nn.ModuleDict({
-            "gcn1": GCNLayer1(self.in_channels, out_channels),
-            "extra_lin": layer_init(nn.Linear(self.extra_features, 8)),
-            "lin1": layer_init(nn.Linear(n_edges * out_channels + 8, 64)),
-            "lin2": layer_init(nn.Linear(64, envs.single_action_space.n), std=0.01)
-        })
 
         self.tanh = nn.Tanh()
         self.flattern = nn.Flatten()
@@ -91,7 +71,7 @@ class GCN_Agent(nn.Module):
         self.edge_adjacency = self.edge_adjacency.to(device)
 
 
-    def get_value(self, x):
+    def forward(self, x):
         batch_size = x.shape[0]
         x, extras = x.split([x.shape[-1] - 1, 1], dim=-1)
         x = x.reshape(batch_size, -1, self.in_channels)
@@ -105,26 +85,8 @@ class GCN_Agent(nn.Module):
         return self.critic["lin2"](x)
 
 
-    def get_action_and_value(self, x, action=None):
-        batch_size = x.shape[0]
-        _x, extras = x.split([x.shape[-1] - 1, 1], dim=-1)
-        _x = _x.reshape(batch_size, -1, self.in_channels)
-        adj_matrix = self.edge_adjacency.expand(batch_size, _x.shape[1], _x.shape[1])
 
-        _x = self.tanh(self.actor["gcn1"](_x, adj_matrix))
-        _x = self.flattern(_x)
-        extras = self.tanh(self.critic["extra_lin"](extras))
-        _x = torch.cat([_x, extras], dim=-1)
-        _x = self.tanh(self.actor["lin1"](_x))
-        logits = self.actor["lin2"](_x)
-
-        probs = Categorical(logits=logits)
-        if action is None:
-            action = probs.sample()
-        # return action, probs.log_prob(action), probs.entropy(), self.critic(x, adj_matrix)
-        return action, probs.log_prob(action), probs.entropy(), self.get_value(x)
-
-class MixedAgent(nn.Module):
+class MixedNetwork(nn.Module):
     def __init__(self, envs):
         super().__init__()
         self.edge_adjacency = torch.from_numpy(envs.envs[0].edge_adjacency).float()
@@ -132,21 +94,14 @@ class MixedAgent(nn.Module):
         self.extra_features = envs.envs[0].extra_features
         n_edges = (envs.single_observation_space.shape[0] - self.extra_features)//self.in_channels
         hidden_channels = 64
-        # out_channels = 64
-        out_channels = 32
+        out_channels = 64
+        # out_channels = 32
 
         self.critic = nn.ModuleDict({
             "gcn1": GCNLayer1(self.in_channels, out_channels),
-            "lin1": layer_init(nn.Linear(out_channels*n_edges + envs.single_observation_space.shape[0], 128)),
-            "lin2": layer_init(nn.Linear(128, 64)),
-            "lin3": layer_init(nn.Linear(64, 1), std=1.0),
-        })
-
-        self.actor = nn.ModuleDict({
-            "gcn1": GCNLayer1(self.in_channels, out_channels),
-            "lin1": layer_init(nn.Linear(out_channels*n_edges + envs.single_observation_space.shape[0], 128)),
-            "lin2": layer_init(nn.Linear(128, 64)),
-            "lin3": layer_init(nn.Linear(64, envs.single_action_space.n), std=0.01)
+            "lin1": nn.Linear(out_channels*n_edges + envs.single_observation_space.shape[0], 256),
+            "lin2": nn.Linear(256, 128),
+            "lin3": nn.Linear(128, envs.single_action_space.n),
         })
 
         self.tanh = nn.Tanh()
@@ -156,7 +111,7 @@ class MixedAgent(nn.Module):
         self.to(device)
         self.edge_adjacency = self.edge_adjacency.to(device)
 
-    def get_value(self, x):
+    def forward(self, x):
         batch_size = x.shape[0]
         _x, _ = x.split([x.shape[-1] - 1, 1], dim=-1)
         _x = _x.reshape(batch_size, -1, self.in_channels)
@@ -169,25 +124,6 @@ class MixedAgent(nn.Module):
         _x = self.tanh(self.critic["lin2"](_x))
         return self.critic["lin3"](_x)
 
-
-    def get_action_and_value(self, x, action=None):
-        batch_size = x.shape[0]
-        _x, extras = x.split([x.shape[-1] - 1, 1], dim=-1)
-        _x = _x.reshape(batch_size, -1, self.in_channels)
-        adj_matrix = self.edge_adjacency.expand(batch_size, _x.shape[1], _x.shape[1])
-
-        _x = self.tanh(self.actor["gcn1"](_x, adj_matrix))
-        _x = self.flattern(_x)
-        _x = torch.cat([x, _x], dim=-1)
-        _x = self.tanh(self.actor["lin1"](_x))
-        _x = self.tanh(self.actor["lin2"](_x))
-        logits = self.actor["lin3"](_x)
-
-        probs = Categorical(logits=logits)
-        if action is None:
-            action = probs.sample()
-        # return action, probs.log_prob(action), probs.entropy(), self.critic(x, adj_matrix)
-        return action, probs.log_prob(action), probs.entropy(), self.get_value(x)
 
 
 class GATAgent(nn.Module):
@@ -871,8 +807,8 @@ def get_layer_type(layer_type):
     else:
         raise Exception(f'Layer type {layer_type} not yet supported.')
 
-agents = {
-    'mlp': Agent,
-    'gcn': GCN_Agent,
-    'mixed': MixedAgent
+q_networks = {
+    'mlp': QNetwork,
+    'gcn': GCNNetwork,
+    'mixed': MixedNetwork
 }

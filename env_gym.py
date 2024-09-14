@@ -78,7 +78,7 @@ class Network(gym.Env):
         options = None,
     ):
         super().reset(seed=seed)
-        self.weights = np.full(self.n_edges, 20, dtype=np.float32)
+        self.weights = np.full(self.n_edges, 50, dtype=np.float32)
 
         self.traffic_index += 1
         if self.traffic_index >= len(self.demands):
@@ -156,19 +156,19 @@ class Network(gym.Env):
         return observation, reward, terminated, False, info
 
 
-def get_all_pair_shortest_paths(weight_matrix, e_index_map, e_cap):
-    # weight_matrix: n_nodes x n_nodes
+def get_all_pair_shortest_paths(weights, e_sources, e_dests, e_index_map):
+    # weight_matrix: n_edges
     # e_index_map: n_nodes x n_nodes -> e_index
     # e_cap: n_edges
     # traffic_sources: n_traffic x n_nodes
     # traffic_dests: n_traffic x n_nodes
 
-    n_nodes = len(weight_matrix)
+    n_nodes = e_index_map.shape[0]
     nodes = list(range(n_nodes))
-    n_edges = len(e_cap)
+    n_edges = len(weights)
 
     shortest_paths = np.zeros((n_nodes, n_nodes, n_edges), dtype=int)
-    graph = csr_matrix(weight_matrix)
+    graph = csr_matrix((weights, (e_sources, e_dests)), shape=(n_nodes, n_nodes))
     _, predecessors = dijkstra(csgraph=graph, directed=True, return_predecessors=True)
 
     for m in nodes:
@@ -194,27 +194,18 @@ def get_mdt(weights, e_sources, e_dests, nodes, e_index_map, e_cap, traffic_sour
     n_traffic = len(traffic_bw)
     n_edges = len(e_cap)
 
-    shortest_paths = np.zeros((n_nodes, n_nodes, n_edges), dtype=int)
+    all_pair_shortest_paths = get_all_pair_shortest_paths(
+        weights=weights, e_sources=e_sources, e_dests=e_dests, e_index_map=e_index_map
+    )
     shortest_path_trees = np.zeros((n_edges, n_traffic), dtype=int)
-    graph = csr_matrix((weights, (e_sources, e_dests)), shape=(n_nodes, n_nodes))
-    _, predecessors = dijkstra(csgraph=graph, directed=True, return_predecessors=True)
 
-    for m in nodes:
-        for n in nodes:
-            if m == n:
-                continue
-            u, v = n, n
-            while v != m:
-                u = predecessors[m][v]
-                shortest_paths[m,n,e_index_map[u,v]] = 1
-                v = u
 
     for j in range(n_traffic):
-        shortest_path_trees[:, j] = shortest_paths[traffic_sources[j], traffic_dests[j]].sum(axis=0)
+        shortest_path_trees[:, j] = all_pair_shortest_paths[traffic_sources[j], traffic_dests[j]].sum(axis=0)
 
     shortest_path_trees[shortest_path_trees > 1] = 1
 
-    return shortest_path_trees, shortest_paths
+    return shortest_path_trees, all_pair_shortest_paths
 
 def rps(all_pair_shortest_paths, e_cap, sources, dests, traffic_bw, deltas):
     n_traffic = len(traffic_bw)
